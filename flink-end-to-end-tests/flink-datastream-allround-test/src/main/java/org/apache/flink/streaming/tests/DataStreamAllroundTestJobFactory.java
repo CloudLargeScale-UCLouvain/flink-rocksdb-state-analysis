@@ -237,6 +237,9 @@ public class DataStreamAllroundTestJobFactory {
     private static final ConfigOption<Integer> SEQUENCE_GENERATOR_SRC_PAYLOAD_SIZE =
             ConfigOptions.key("sequence_generator_source.payload_size").intType().defaultValue(20);
 
+    private static final ConfigOption<Integer> SEQUENCE_GENERATOR_SRC_WORKLOAD_SIZE =
+            ConfigOptions.key("sequence_generator_source.workload_size").intType().defaultValue(10);
+
     private static final ConfigOption<Long> SEQUENCE_GENERATOR_SRC_SLEEP_TIME =
             ConfigOptions.key("sequence_generator_source.sleep_time").longType().defaultValue(0L);
 
@@ -254,6 +257,21 @@ public class DataStreamAllroundTestJobFactory {
             ConfigOptions.key("sequence_generator_source.event_time.clock_progress")
                     .longType()
                     .defaultValue(100L);
+
+    private static final ConfigOption<Boolean> SEQUENCE_GENERATOR_SKEWED_DATA =
+            ConfigOptions.key("sequence_generator_source.skewness.enable")
+                    .booleanType()
+                    .defaultValue(false);
+
+    private static final ConfigOption<Double> SEQUENCE_GENERATOR_SKEWED_DATA_SKEW =
+            ConfigOptions.key("sequence_generator_source.skewness.skew")
+                    .doubleType()
+                    .defaultValue(1.0);
+
+    private static final ConfigOption<Double> SEQUENCE_GENERATOR_SKEWED_DATA_BIAS =
+            ConfigOptions.key("sequence_generator_source.skewness.bias")
+                    .doubleType()
+                    .defaultValue(0.0);
 
     private static final ConfigOption<Long> TUMBLING_WINDOW_OPERATOR_NUM_EVENTS =
             ConfigOptions.key("tumbling_window_operator.num_events").longType().defaultValue(20L);
@@ -394,6 +412,9 @@ public class DataStreamAllroundTestJobFactory {
                 pt.getInt(
                         SEQUENCE_GENERATOR_SRC_PAYLOAD_SIZE.key(),
                         SEQUENCE_GENERATOR_SRC_PAYLOAD_SIZE.defaultValue()),
+                pt.getInt(
+                        SEQUENCE_GENERATOR_SRC_WORKLOAD_SIZE.key(),
+                        SEQUENCE_GENERATOR_SRC_WORKLOAD_SIZE.defaultValue()),
                 pt.getLong(
                         SEQUENCE_GENERATOR_SRC_EVENT_TIME_MAX_OUT_OF_ORDERNESS.key(),
                         SEQUENCE_GENERATOR_SRC_EVENT_TIME_MAX_OUT_OF_ORDERNESS.defaultValue()),
@@ -405,7 +426,16 @@ public class DataStreamAllroundTestJobFactory {
                         SEQUENCE_GENERATOR_SRC_SLEEP_TIME.defaultValue()),
                 pt.getLong(
                         SEQUENCE_GENERATOR_SRC_SLEEP_AFTER_ELEMENTS.key(),
-                        SEQUENCE_GENERATOR_SRC_SLEEP_AFTER_ELEMENTS.defaultValue()));
+                        SEQUENCE_GENERATOR_SRC_SLEEP_AFTER_ELEMENTS.defaultValue()),
+                pt.getBoolean(
+                        SEQUENCE_GENERATOR_SKEWED_DATA.key(),
+                        SEQUENCE_GENERATOR_SKEWED_DATA.defaultValue()),
+                pt.getDouble(
+                        SEQUENCE_GENERATOR_SKEWED_DATA_SKEW.key(),
+                        SEQUENCE_GENERATOR_SKEWED_DATA_SKEW.defaultValue()),
+                pt.getDouble(
+                        SEQUENCE_GENERATOR_SKEWED_DATA_BIAS.key(),
+                        SEQUENCE_GENERATOR_SKEWED_DATA_BIAS.defaultValue()));
     }
 
     static BoundedOutOfOrdernessTimestampExtractor<Event> createTimestampExtractor(
