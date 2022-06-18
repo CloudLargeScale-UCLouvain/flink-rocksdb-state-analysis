@@ -63,29 +63,24 @@ public class RocksDBStateMemoryControlTestProgram {
         final boolean useListState = pt.getBoolean("useListState", false);
         final boolean useMapState = pt.getBoolean("useMapState", false);
         final double fillHeap = pt.getDouble("fillHeap", 0.0);
-        final boolean measureLatency = pt.getBoolean("measureLatency", false);
+        final boolean measureReadLatency = pt.getBoolean("measureReadLatency", false);
+        final boolean measureWriteLatency = pt.getBoolean("measureWriteLatency", false);
         final boolean ssg = pt.getBoolean("ssg", false);
         final double ssgCPU = pt.getDouble("ssgCPU", 1.0);
         final int ssgHeap = pt.getInt("ssgHeap", 500);
         final int ssgManaged = pt.getInt("ssgManaged", 500);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        SlotSharingGroup ssgSource =
-                SlotSharingGroup.newBuilder("source")
-                        .setCpuCores(2.0)
-                        .setTaskHeapMemoryMB(200)
-                        .build();
-
-        SlotSharingGroup ssgMap =
-                SlotSharingGroup.newBuilder("map")
-                        .setCpuCores(ssgCPU)
-                        .setTaskHeapMemoryMB(ssgHeap)
-                        .setManagedMemory(MemorySize.ofMebiBytes(ssgManaged))
-                        .build();
 
         setupEnvironment(env, pt);
         KeyedStream<Event, Integer> keyedStream;
         if (ssg) {
+            SlotSharingGroup ssgSource =
+                    SlotSharingGroup.newBuilder("source")
+                            .setCpuCores(2.0)
+                            .setTaskHeapMemoryMB(200)
+                            .build();
+
             keyedStream =
                     env.addSource(DataStreamAllroundTestJobFactory.createEventSource(pt))
                             .slotSharingGroup(ssgSource)
@@ -104,14 +99,25 @@ public class RocksDBStateMemoryControlTestProgram {
 
         if (useValueState) {
             if (ssg) {
+                SlotSharingGroup ssgMap =
+                        SlotSharingGroup.newBuilder("map")
+                                .setCpuCores(ssgCPU)
+                                .setTaskHeapMemoryMB(ssgHeap)
+                                .setManagedMemory(MemorySize.ofMebiBytes(ssgManaged))
+                                .build();
+
                 keyedStream
-                        .map(new ValueStateMapper(fillHeap, measureLatency))
+                        .map(
+                                new ValueStateMapper(
+                                        fillHeap, measureReadLatency, measureWriteLatency))
                         .slotSharingGroup(ssgMap)
                         .name("ValueStateMapper")
                         .uid("ValueStateMapper");
             } else {
                 keyedStream
-                        .map(new ValueStateMapper(fillHeap, measureLatency))
+                        .map(
+                                new ValueStateMapper(
+                                        fillHeap, measureReadLatency, measureWriteLatency))
                         .name("ValueStateMapper")
                         .uid("ValueStateMapper");
             }
@@ -154,15 +160,19 @@ public class RocksDBStateMemoryControlTestProgram {
 
         private Vector v;
 
-        private double fillHeap;
+        private final double fillHeap;
 
-        private final boolean measure;
+        private final boolean measureReadLatency;
+
+        private final boolean measureWriteLatency;
 
         private int counter = 0;
 
-        public ValueStateMapper(double fillHeap, boolean measure) {
+        public ValueStateMapper(
+                double fillHeap, boolean measureReadLatency, boolean measureWriteLatency) {
             this.fillHeap = fillHeap;
-            this.measure = measure;
+            this.measureReadLatency = measureReadLatency;
+            this.measureWriteLatency = measureWriteLatency;
         }
 
         @Override
@@ -183,13 +193,27 @@ public class RocksDBStateMemoryControlTestProgram {
         public Event map(Event event) throws Exception {
             long startTime = System.nanoTime();
             String value = valueState.value();
-            if (measure && counter % 100 == 0) {
-                LOG.info(String.valueOf(System.nanoTime() - startTime));
+            if (measureReadLatency && counter % 10 == 0) {
+                LOG.info(
+                        "read {} {}",
+                        value != null ? value.length() : 0,
+                        System.nanoTime() - startTime);
             }
             if (value != null) {
+                long writeStartTime = System.nanoTime();
                 valueState.update(event.getPayload().concat(value));
+                if (measureWriteLatency && counter % 10 == 0) {
+                    LOG.info(
+                            "write {} {}",
+                            value.length() + 50000,
+                            System.nanoTime() - writeStartTime);
+                }
             } else {
+                long writeStartTime = System.nanoTime();
                 valueState.update(event.getPayload());
+                if (measureWriteLatency && counter % 10 == 0) {
+                    LOG.info("write 50000 {}", System.nanoTime() - writeStartTime);
+                }
             }
             counter++;
             return event;
