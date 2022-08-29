@@ -63,13 +63,17 @@ public class RocksDBStateMemoryControlTestProgram {
         final boolean useListState = pt.getBoolean("useListState", false);
         final boolean useMapState = pt.getBoolean("useMapState", false);
         final double fillHeap = pt.getDouble("fillHeap", 0.0);
+        final boolean replaceValue = pt.getBoolean("replaceValue", false);
         final boolean measureReadLatency = pt.getBoolean("measureReadLatency", false);
         final boolean measureWriteLatency = pt.getBoolean("measureWriteLatency", false);
         final boolean replaceValue = pt.getBoolean("replaceValue", false);
         final boolean ssg = pt.getBoolean("ssg", false);
-        final double ssgCPU = pt.getDouble("ssgCPU", 1.0);
-        final int ssgHeap = pt.getInt("ssgHeap", 500);
-        final int ssgManaged = pt.getInt("ssgManaged", 500);
+        final double ssgCPUSource = pt.getDouble("ssgCPUSource", 1.0);
+        final double ssgCPUMap = pt.getDouble("ssgCPUMap", 1.0);
+        final int ssgHeapSource = pt.getInt("ssgHeapSource", 500);
+        final int ssgHeapMap = pt.getInt("ssgHeapMap", 100);
+        final int ssgManagedSource = pt.getInt("ssgManagedSource", 0);
+        final int ssgManagedMap = pt.getInt("ssgManagedMap", 500);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
@@ -78,8 +82,9 @@ public class RocksDBStateMemoryControlTestProgram {
         if (ssg) {
             SlotSharingGroup ssgSource =
                     SlotSharingGroup.newBuilder("source")
-                            .setCpuCores(2.0)
-                            .setTaskHeapMemoryMB(200)
+                            .setCpuCores(ssgCPUSource)
+                            .setTaskHeapMemoryMB(ssgHeapSource)
+                            .setManagedMemory(MemorySize.ofMebiBytes(ssgManagedSource))
                             .build();
 
             keyedStream =
@@ -102,18 +107,18 @@ public class RocksDBStateMemoryControlTestProgram {
             if (ssg) {
                 SlotSharingGroup ssgMap =
                         SlotSharingGroup.newBuilder("map")
-                                .setCpuCores(ssgCPU)
-                                .setTaskHeapMemoryMB(ssgHeap)
-                                .setManagedMemory(MemorySize.ofMebiBytes(ssgManaged))
+                                .setCpuCores(ssgCPUMap)
+                                .setTaskHeapMemoryMB(ssgHeapMap)
+                                .setManagedMemory(MemorySize.ofMebiBytes(ssgManagedMap))
                                 .build();
 
                 keyedStream
                         .map(
                                 new ValueStateMapper(
                                         fillHeap,
+                                        replaceValue,
                                         measureReadLatency,
-                                        measureWriteLatency,
-                                        replaceValue))
+                                        measureWriteLatency))
                         .slotSharingGroup(ssgMap)
                         .name("ValueStateMapper")
                         .uid("ValueStateMapper");
@@ -122,9 +127,9 @@ public class RocksDBStateMemoryControlTestProgram {
                         .map(
                                 new ValueStateMapper(
                                         fillHeap,
+                                        replaceValue,
                                         measureReadLatency,
-                                        measureWriteLatency,
-                                        replaceValue))
+                                        measureWriteLatency))
                         .name("ValueStateMapper")
                         .uid("ValueStateMapper");
             }
@@ -169,6 +174,8 @@ public class RocksDBStateMemoryControlTestProgram {
 
         private final double fillHeap;
 
+        private final boolean replaceValue;
+
         private final boolean measureReadLatency;
 
         private final boolean measureWriteLatency;
@@ -179,10 +186,11 @@ public class RocksDBStateMemoryControlTestProgram {
 
         public ValueStateMapper(
                 double fillHeap,
+                boolean replaceValue,
                 boolean measureReadLatency,
-                boolean measureWriteLatency,
-                boolean replaceValue) {
+                boolean measureWriteLatency) {
             this.fillHeap = fillHeap;
+            this.replaceValue = replaceValue;
             this.measureReadLatency = measureReadLatency;
             this.measureWriteLatency = measureWriteLatency;
             this.replaceValue = replaceValue;
@@ -212,7 +220,7 @@ public class RocksDBStateMemoryControlTestProgram {
                         value != null ? value.length() : 0,
                         System.nanoTime() - startTime);
             }
-            if (value != null) {
+            if (value != null && !replaceValue) {
                 long writeStartTime = System.nanoTime();
                 valueState.update(
                         replaceValue ? event.getPayload() : event.getPayload().concat(value));
