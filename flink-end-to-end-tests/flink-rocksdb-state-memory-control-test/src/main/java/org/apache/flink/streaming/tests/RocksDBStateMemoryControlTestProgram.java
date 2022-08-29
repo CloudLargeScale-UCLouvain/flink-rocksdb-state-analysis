@@ -65,6 +65,7 @@ public class RocksDBStateMemoryControlTestProgram {
         final double fillHeap = pt.getDouble("fillHeap", 0.0);
         final boolean measureReadLatency = pt.getBoolean("measureReadLatency", false);
         final boolean measureWriteLatency = pt.getBoolean("measureWriteLatency", false);
+        final boolean replaceValue = pt.getBoolean("replaceValue", false);
         final boolean ssg = pt.getBoolean("ssg", false);
         final double ssgCPU = pt.getDouble("ssgCPU", 1.0);
         final int ssgHeap = pt.getInt("ssgHeap", 500);
@@ -109,7 +110,10 @@ public class RocksDBStateMemoryControlTestProgram {
                 keyedStream
                         .map(
                                 new ValueStateMapper(
-                                        fillHeap, measureReadLatency, measureWriteLatency))
+                                        fillHeap,
+                                        measureReadLatency,
+                                        measureWriteLatency,
+                                        replaceValue))
                         .slotSharingGroup(ssgMap)
                         .name("ValueStateMapper")
                         .uid("ValueStateMapper");
@@ -117,7 +121,10 @@ public class RocksDBStateMemoryControlTestProgram {
                 keyedStream
                         .map(
                                 new ValueStateMapper(
-                                        fillHeap, measureReadLatency, measureWriteLatency))
+                                        fillHeap,
+                                        measureReadLatency,
+                                        measureWriteLatency,
+                                        replaceValue))
                         .name("ValueStateMapper")
                         .uid("ValueStateMapper");
             }
@@ -168,11 +175,17 @@ public class RocksDBStateMemoryControlTestProgram {
 
         private int counter = 0;
 
+        private final boolean replaceValue;
+
         public ValueStateMapper(
-                double fillHeap, boolean measureReadLatency, boolean measureWriteLatency) {
+                double fillHeap,
+                boolean measureReadLatency,
+                boolean measureWriteLatency,
+                boolean replaceValue) {
             this.fillHeap = fillHeap;
             this.measureReadLatency = measureReadLatency;
             this.measureWriteLatency = measureWriteLatency;
+            this.replaceValue = replaceValue;
         }
 
         @Override
@@ -201,7 +214,8 @@ public class RocksDBStateMemoryControlTestProgram {
             }
             if (value != null) {
                 long writeStartTime = System.nanoTime();
-                valueState.update(event.getPayload().concat(value));
+                valueState.update(
+                        replaceValue ? event.getPayload() : event.getPayload().concat(value));
                 if (measureWriteLatency && counter % 10 == 0) {
                     LOG.info(
                             "write {} {}",
