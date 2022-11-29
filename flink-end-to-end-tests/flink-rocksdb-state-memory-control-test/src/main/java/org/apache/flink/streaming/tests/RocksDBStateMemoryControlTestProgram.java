@@ -66,7 +66,6 @@ public class RocksDBStateMemoryControlTestProgram {
         final boolean replaceValue = pt.getBoolean("replaceValue", false);
         final boolean measureReadLatency = pt.getBoolean("measureReadLatency", false);
         final boolean measureWriteLatency = pt.getBoolean("measureWriteLatency", false);
-        final boolean replaceValue = pt.getBoolean("replaceValue", false);
         final boolean ssg = pt.getBoolean("ssg", false);
         final double ssgCPUSource = pt.getDouble("ssgCPUSource", 1.0);
         final double ssgCPUMap = pt.getDouble("ssgCPUMap", 1.0);
@@ -74,6 +73,7 @@ public class RocksDBStateMemoryControlTestProgram {
         final int ssgHeapMap = pt.getInt("ssgHeapMap", 100);
         final int ssgManagedSource = pt.getInt("ssgManagedSource", 0);
         final int ssgManagedMap = pt.getInt("ssgManagedMap", 500);
+        final boolean readOnly = pt.getBoolean("readOnly", false);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
@@ -113,23 +113,13 @@ public class RocksDBStateMemoryControlTestProgram {
                                 .build();
 
                 keyedStream
-                        .map(
-                                new ValueStateMapper(
-                                        fillHeap,
-                                        replaceValue,
-                                        measureReadLatency,
-                                        measureWriteLatency))
+                        .map(new ValueStateMapper(fillHeap, replaceValue, readOnly))
                         .slotSharingGroup(ssgMap)
                         .name("ValueStateMapper")
                         .uid("ValueStateMapper");
             } else {
                 keyedStream
-                        .map(
-                                new ValueStateMapper(
-                                        fillHeap,
-                                        replaceValue,
-                                        measureReadLatency,
-                                        measureWriteLatency))
+                        .map(new ValueStateMapper(fillHeap, replaceValue, readOnly))
                         .name("ValueStateMapper")
                         .uid("ValueStateMapper");
             }
@@ -176,24 +166,12 @@ public class RocksDBStateMemoryControlTestProgram {
 
         private final boolean replaceValue;
 
-        private final boolean measureReadLatency;
+        private final boolean readOnly;
 
-        private final boolean measureWriteLatency;
-
-        private int counter = 0;
-
-        private final boolean replaceValue;
-
-        public ValueStateMapper(
-                double fillHeap,
-                boolean replaceValue,
-                boolean measureReadLatency,
-                boolean measureWriteLatency) {
+        public ValueStateMapper(double fillHeap, boolean replaceValue, boolean readOnly) {
             this.fillHeap = fillHeap;
             this.replaceValue = replaceValue;
-            this.measureReadLatency = measureReadLatency;
-            this.measureWriteLatency = measureWriteLatency;
-            this.replaceValue = replaceValue;
+            this.readOnly = readOnly;
         }
 
         @Override
@@ -212,32 +190,15 @@ public class RocksDBStateMemoryControlTestProgram {
 
         @Override
         public Event map(Event event) throws Exception {
-            long startTime = System.nanoTime();
             String value = valueState.value();
-            if (measureReadLatency && counter % 10 == 0) {
-                LOG.info(
-                        "read {} {}",
-                        value != null ? value.length() : 0,
-                        System.nanoTime() - startTime);
+            if (value != null && readOnly) {
+                return event;
             }
             if (value != null && !replaceValue) {
-                long writeStartTime = System.nanoTime();
-                valueState.update(
-                        replaceValue ? event.getPayload() : event.getPayload().concat(value));
-                if (measureWriteLatency && counter % 10 == 0) {
-                    LOG.info(
-                            "write {} {}",
-                            value.length() + 50000,
-                            System.nanoTime() - writeStartTime);
-                }
+                valueState.update(event.getPayload().concat(value));
             } else {
-                long writeStartTime = System.nanoTime();
                 valueState.update(event.getPayload());
-                if (measureWriteLatency && counter % 10 == 0) {
-                    LOG.info("write 50000 {}", System.nanoTime() - writeStartTime);
-                }
             }
-            counter++;
             return event;
         }
     }

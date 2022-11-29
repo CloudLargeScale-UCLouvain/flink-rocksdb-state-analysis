@@ -28,10 +28,7 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 /** This source function generates a sequence of long values per key. */
 public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
@@ -65,6 +62,14 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
 
     private final double skewedDataBias;
 
+    private final int elementsPerSecond;
+
+    private final int sleepBatchSize;
+
+    private final int sleepBatchTime;
+
+    private long dataSent = 0L;
+
     /**
      * This determines after how many generated events we sleep. A value < 1 deactivates sleeping.
      */
@@ -82,6 +87,9 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
     /** This is used to snapshot the event time progress of the sources. */
     private transient ListState<Long> lastEventTimes;
 
+    /** This is used to snapshot the event time progress of the sources. */
+    private transient ListState<Long> dataSentState;
+
     /** Flag that determines if this source is running, i.e. generating events. */
     private volatile boolean running;
 
@@ -95,7 +103,8 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
             long sleepAfterElements,
             boolean skewedData,
             double skewedDataSkew,
-            double skewedDataBias) {
+            double skewedDataBias,
+            int elementsPerSecond) {
 
         this.totalKeySpaceSize = totalKeySpaceSize;
         this.maxOutOfOrder = maxOutOfOrder;
@@ -108,6 +117,19 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
         this.skewedDataSkew = skewedDataSkew;
         this.skewedDataBias = skewedDataBias;
         this.running = true;
+        this.elementsPerSecond = elementsPerSecond;
+        if (elementsPerSecond >= 100) {
+            // how many elements would we emit per 50ms
+            this.sleepBatchSize = elementsPerSecond / 20;
+            this.sleepBatchTime = 50;
+        } else if (elementsPerSecond >= 1) {
+            // how long does element take
+            this.sleepBatchSize = 1;
+            this.sleepBatchTime = 1000 / elementsPerSecond;
+        } else {
+            this.sleepBatchSize = 1;
+            this.sleepBatchTime = 1;
+        }
     }
 
     @Override
@@ -126,18 +148,14 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
         // (maxOutOfOrder).
         long elementsBeforeSleep = sleepAfterElements;
 
-        long dataSent = 0L;
-        final RuntimeContext runtimeContext = getRuntimeContext();
+        long lastBatchCheckTime = 0;
+
+        long num = 0;
 
         while (running
                 && (workloadLength == -1
-                        || (dataSent
-                                < ((long) workloadLength
-                                        * 1024L
-                                        * 1024L
-                                        * 1024L
-                                        / runtimeContext.getNumberOfParallelSubtasks())))) {
-
+                        || (dataSent * getRuntimeContext().getNumberOfParallelSubtasks()
+                                < ((long) workloadLength * 1024 * 1024 * 1024)))) {
             KeyRangeStates randomKeyRangeStates = keyRanges.get(random.nextInt(keyRanges.size()));
             int randomKey = randomKeyRangeStates.getRandomKey(random);
 
@@ -158,6 +176,27 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
                                 StringUtils.getRandomString(
                                         random, payloadLength, payloadLength, 'A', 'z'));
                 dataSent += payloadLength;
+                if (elementsPerSecond > 0) {
+                    if (lastBatchCheckTime > 0) {
+                        if (++num >= sleepBatchSize) {
+                            num = 0;
+
+                            final long now = System.currentTimeMillis();
+                            final long elapsed = now - lastBatchCheckTime;
+                            if (elapsed < sleepBatchTime) {
+                                try {
+                                    Thread.sleep(sleepBatchTime - elapsed);
+                                } catch (InterruptedException e) {
+                                    // restore interrupt flag and proceed
+                                    Thread.currentThread().interrupt();
+                                }
+                            }
+                            lastBatchCheckTime = now;
+                        }
+                    } else {
+                        lastBatchCheckTime = System.currentTimeMillis();
+                    }
+                }
                 ctx.collect(event);
             }
 
@@ -213,6 +252,7 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
 
         lastEventTimes.clear();
         lastEventTimes.add(monotonousEventTime);
+        dataSentState.update(Collections.singletonList(dataSent));
     }
 
     @Override
@@ -234,6 +274,10 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
         snapshotKeyRanges = context.getOperatorStateStore().getListState(stateDescriptor);
         keyRanges = new ArrayList<>();
 
+        ListStateDescriptor<Long> dataSentStateDescriptor =
+                new ListStateDescriptor<>("dataSent", Long.class);
+        dataSentState = context.getOperatorStateStore().getUnionListState(dataSentStateDescriptor);
+
         if (context.isRestored()) {
             // restore key ranges from the snapshot
             for (KeyRangeStates keyRange : snapshotKeyRanges.get()) {
@@ -244,6 +288,10 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
             // last execution
             for (Long lastEventTime : lastEventTimes.get()) {
                 monotonousEventTime = Math.max(monotonousEventTime, lastEventTime);
+            }
+
+            for (Long dataSent : dataSentState.get()) {
+                this.dataSent = dataSent;
             }
         } else {
             // determine the key ranges that belong to the subtask

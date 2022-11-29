@@ -273,6 +273,11 @@ public class DataStreamAllroundTestJobFactory {
                     .doubleType()
                     .defaultValue(0.0);
 
+    private static final ConfigOption<Integer> SEQUENCE_GENERATOR_ELEMENTS_PER_SECOND =
+            ConfigOptions.key("sequence_generator_source.elements_per_second")
+                    .intType()
+                    .defaultValue(0);
+
     private static final ConfigOption<Long> TUMBLING_WINDOW_OPERATOR_NUM_EVENTS =
             ConfigOptions.key("tumbling_window_operator.num_events").longType().defaultValue(20L);
 
@@ -435,7 +440,10 @@ public class DataStreamAllroundTestJobFactory {
                         SEQUENCE_GENERATOR_SKEWED_DATA_SKEW.defaultValue()),
                 pt.getDouble(
                         SEQUENCE_GENERATOR_SKEWED_DATA_BIAS.key(),
-                        SEQUENCE_GENERATOR_SKEWED_DATA_BIAS.defaultValue()));
+                        SEQUENCE_GENERATOR_SKEWED_DATA_BIAS.defaultValue()),
+                pt.getInt(
+                        SEQUENCE_GENERATOR_ELEMENTS_PER_SECOND.key(),
+                        SEQUENCE_GENERATOR_ELEMENTS_PER_SECOND.defaultValue()));
     }
 
     static BoundedOutOfOrdernessTimestampExtractor<Event> createTimestampExtractor(
