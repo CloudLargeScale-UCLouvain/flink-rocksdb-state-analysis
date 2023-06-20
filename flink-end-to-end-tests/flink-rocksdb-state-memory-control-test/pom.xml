@@ -46,6 +46,17 @@ under the License.
 			<artifactId>flink-datastream-allround-test</artifactId>
 			<version>${project.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>org.apache.flink</groupId>
+			<artifactId>flink-connector-kafka</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.flink</groupId>
+			<artifactId>flink-sql-connector-kafka-ratelimit</artifactId>
+			<version>1.15.1</version>
+		</dependency>
+
 	</dependencies>
 
 	<build>
@@ -55,64 +66,50 @@ under the License.
 				<artifactId>maven-shade-plugin</artifactId>
 				<executions>
 					<execution>
-						<id>RocksDBStateMemoryControlTestProgram</id>
+						<id>WorkloadFromKafka</id>
 						<phase>package</phase>
 						<goals>
 							<goal>shade</goal>
 						</goals>
 						<configuration>
-							<finalName>RocksDBStateMemoryControlTestProgram</finalName>
+							<finalName>WorkloadFromKafka</finalName>
 							<transformers>
 								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-									<mainClass>org.apache.flink.streaming.tests.RocksDBStateMemoryControlTestProgram</mainClass>
+									<mainClass>org.apache.flink.streaming.tests.WorkloadFromKafka</mainClass>
 								</transformer>
 							</transformers>
 						</configuration>
 					</execution>
 
 					<execution>
-						<id>RocksDBLatencyTestProgram</id>
+						<id>RocksDBCPUTest</id>
 						<phase>package</phase>
 						<goals>
 							<goal>shade</goal>
 						</goals>
 						<configuration>
-							<finalName>RocksDBLatencyTestProgram</finalName>
+							<finalName>RocksDBCPUTest</finalName>
 							<transformers>
 								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-									<mainClass>org.apache.flink.streaming.tests.RocksDBLatencyTestProgram</mainClass>
+									<mainClass>org.apache.flink.streaming.tests.RocksDBCPUTest</mainClass>
 								</transformer>
 							</transformers>
 						</configuration>
 					</execution>
 
-					<execution>
-						<id>RocksDBMultipleOperatorTest</id>
-						<phase>package</phase>
-						<goals>
-							<goal>shade</goal>
-						</goals>
-						<configuration>
-							<finalName>RocksDBMultipleOperatorTest</finalName>
-							<transformers>
-								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-									<mainClass>org.apache.flink.streaming.tests.RocksDBMultipleOperatorTest</mainClass>
-								</transformer>
-							</transformers>
-						</configuration>
-					</execution>
+
 
 					<execution>
-						<id>RocksDBMultipleTaskTest</id>
+						<id>DatagenKafka</id>
 						<phase>package</phase>
 						<goals>
 							<goal>shade</goal>
 						</goals>
 						<configuration>
-							<finalName>RocksDBMultipleTaskTest</finalName>
+							<finalName>DatagenKafka</finalName>
 							<transformers>
 								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-									<mainClass>org.apache.flink.streaming.tests.RocksDBMultipleTaskTest</mainClass>
+									<mainClass>org.apache.flink.streaming.tests.DatagenKafka</mainClass>
 								</transformer>
 							</transformers>
 						</configuration>

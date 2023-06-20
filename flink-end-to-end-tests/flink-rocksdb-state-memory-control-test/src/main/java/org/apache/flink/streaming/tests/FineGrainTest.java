@@ -19,6 +19,7 @@
 package org.apache.flink.streaming.tests;
 
 import org.apache.flink.api.common.functions.RichMapFunction;
+import org.apache.flink.api.common.operators.SlotSharingGroup;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeutils.base.StringSerializer;
@@ -27,13 +28,9 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.DiscardingSink;
-import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
-import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
-import org.apache.flink.streaming.api.windowing.time.Time;
-import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
-import org.apache.flink.util.Collector;
 
-import static org.apache.flink.streaming.tests.DataStreamAllroundTestJobFactory.*;
+import static org.apache.flink.streaming.tests.DataStreamAllroundTestJobFactory.createTimestampExtractor;
+import static org.apache.flink.streaming.tests.DataStreamAllroundTestJobFactory.setupEnvironment;
 import static org.apache.flink.streaming.tests.TestOperatorEnum.*;
 
 /**
@@ -41,7 +38,7 @@ import static org.apache.flink.streaming.tests.TestOperatorEnum.*;
  * the RocksDB memory and check that the cache/write buffer management work properly, limiting the
  * overall memory footprint of RocksDB.
  */
-public class RocksDBMultipleTaskTest {
+public class FineGrainTest {
 
     private static boolean replaceValue;
 
@@ -51,39 +48,58 @@ public class RocksDBMultipleTaskTest {
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
+        SlotSharingGroup source =
+                SlotSharingGroup.newBuilder("source")
+                        .setCpuCores(1)
+                        .setManagedMemoryMB(0)
+                        .setTaskHeapMemoryMB(364)
+                        .build();
+        SlotSharingGroup map =
+                SlotSharingGroup.newBuilder("map")
+                        .setCpuCores(1)
+                        .setManagedMemoryMB(0)
+                        .setTaskHeapMemoryMB(364)
+                        .build();
+        SlotSharingGroup cpu =
+                SlotSharingGroup.newBuilder("cpu")
+                        .setCpuCores(1)
+                        .setManagedMemoryMB(800)
+                        .setTaskHeapMemoryMB(364)
+                        .build();
+        SlotSharingGroup sink =
+                SlotSharingGroup.newBuilder("sink")
+                        .setCpuCores(1)
+                        .setManagedMemoryMB(0)
+                        .setTaskHeapMemoryMB(364)
+                        .build();
+
         setupEnvironment(env, pt);
         KeyedStream<Event, Integer> keyedStream;
         keyedStream =
                 env.addSource(DataStreamAllroundTestJobFactory.createEventSource(pt))
                         .setParallelism(1)
+                        .slotSharingGroup(source)
                         .name(EVENT_SOURCE.getName())
                         .uid(EVENT_SOURCE.getUid())
                         .assignTimestampsAndWatermarks(createTimestampExtractor(pt))
                         .keyBy(Event::getKey);
 
         keyedStream
-                .map(new ValueStateMapper())
-                .name("ValueStateMapper")
-                .uid("ValueStateMapper")
-                .keyBy(Event::getKey)
-                .window(TumblingEventTimeWindows.of(Time.milliseconds(20L * 100L)))
-                .apply(
-                        new WindowFunction<Event, Event, Integer, TimeWindow>() {
-                            @Override
-                            public void apply(
-                                    Integer integer,
-                                    TimeWindow window,
-                                    Iterable<Event> input,
-                                    Collector<Event> out) {
-                                for (Event e : input) {
-                                    out.collect(e);
-                                }
-                            }
-                        })
-                .name(TIME_WINDOW_OPER.getName())
-                .uid(TIME_WINDOW_OPER.getUid())
+                .map(new FineGrainTest.ValueStateMapper())
+                .setParallelism(4)
+                .slotSharingGroup(map)
+                .name(VALUE_STATE_MAPPER.getName())
+                .uid(VALUE_STATE_MAPPER.getUid())
+                .rebalance()
+                .map(new FineGrainTest.CPULoadMapper(pt))
+                .setParallelism(2)
+                .slotSharingGroup(cpu)
+                .name(CPU_LOAD_MAPPER.getName())
+                .uid(CPU_LOAD_MAPPER.getUid())
                 .disableChaining()
                 .addSink(new DiscardingSink<>())
+                .setParallelism(1)
+                .slotSharingGroup(sink)
                 .name(DISCARDING_SINK.getName())
                 .uid(DISCARDING_SINK.getUid());
 
@@ -116,6 +132,24 @@ public class RocksDBMultipleTaskTest {
             }
             valueState.update(event.getPayload());
             return event;
+        }
+    }
+
+    private static class CPULoadMapper extends RichMapFunction<Event, Event> {
+        private final ParameterTool params;
+
+        public CPULoadMapper(ParameterTool params) {
+            this.params = params;
+        }
+
+        // Let's waste some CPU cycles
+        @Override
+        public Event map(Event s) throws Exception {
+            double res = 0;
+            for (int i = 0; i < params.getInt("iterations", 500); i++) {
+                res += Math.sin(StrictMath.cos(res)) * 2;
+            }
+            return s;
         }
     }
 }

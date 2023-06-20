@@ -28,7 +28,12 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.StringUtils;
 
+import org.apache.flink.shaded.testutils.org.jboss.netty.util.internal.ThreadLocalRandom;
+
+import org.slf4j.LoggerFactory;
+
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** This source function generates a sequence of long values per key. */
 public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
@@ -63,6 +68,8 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
     private final double skewedDataBias;
 
     private final int elementsPerSecond;
+
+    private final boolean cosGeneration;
 
     private final int sleepBatchSize;
 
@@ -104,7 +111,8 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
             boolean skewedData,
             double skewedDataSkew,
             double skewedDataBias,
-            int elementsPerSecond) {
+            int elementsPerSecond,
+            boolean cosGeneration) {
 
         this.totalKeySpaceSize = totalKeySpaceSize;
         this.maxOutOfOrder = maxOutOfOrder;
@@ -112,6 +120,7 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
         this.workloadLength = workloadLength;
         this.eventTimeClockProgressPerEvent = eventTimeClockProgressPerEvent;
         this.sleepTime = sleepTime;
+        this.cosGeneration = cosGeneration;
         this.sleepAfterElements = sleepTime > 0 ? sleepAfterElements : 0;
         this.skewedData = skewedData;
         this.skewedDataSkew = skewedDataSkew;
@@ -135,14 +144,99 @@ public class SequenceGeneratorSource extends RichParallelSourceFunction<Event>
     @Override
     public void run(SourceContext<Event> ctx) throws Exception {
         if (keyRanges.size() > 0) {
-            runActive(ctx);
+            if (this.cosGeneration) {
+                runActiveCos(ctx);
+            } else {
+                runActive(ctx);
+            }
         } else {
             runIdle(ctx);
         }
     }
 
+    private void runActiveCos(SourceContext<Event> ctx) throws Exception {
+        Random random = ThreadLocalRandom.current();
+        final AtomicLong sleepEvery = new AtomicLong(1);
+        Thread producerThread =
+                new Thread(
+                        () -> {
+                            long i = 0;
+                            while (running
+                                    && (workloadLength == -1
+                                            || (dataSent
+                                                            * getRuntimeContext()
+                                                                    .getNumberOfParallelSubtasks()
+                                                    < ((long) workloadLength
+                                                            * 1024
+                                                            * 1024
+                                                            * 1024)))) {
+                                KeyRangeStates randomKeyRangeStates =
+                                        keyRanges.get(random.nextInt(keyRanges.size()));
+                                int randomKey = randomKeyRangeStates.getRandomKey(random);
+
+                                long eventTime =
+                                        Math.max(
+                                                0,
+                                                generateEventTimeWithOutOfOrderness(
+                                                        random, monotonousEventTime));
+
+                                // uptick the event time clock
+                                monotonousEventTime += eventTimeClockProgressPerEvent;
+                                synchronized (ctx.getCheckpointLock()) {
+                                    long value = randomKeyRangeStates.incrementAndGet(randomKey);
+
+                                    Event event =
+                                            new Event(
+                                                    randomKey,
+                                                    eventTime,
+                                                    value,
+                                                    StringUtils.getRandomString(
+                                                            random,
+                                                            payloadLength,
+                                                            payloadLength,
+                                                            'A',
+                                                            'z'));
+                                    dataSent += payloadLength;
+                                    ctx.collect(event);
+                                    i++;
+                                }
+
+                                if (i % sleepEvery.get() == 0) {
+                                    System.out.println(
+                                            "Sleep interval "
+                                                    + sleepEvery.get()
+                                                    + " Kafka produced: "
+                                                    + i);
+                                    try {
+                                        Thread.sleep(15_000);
+                                    } catch (InterruptedException e) {
+                                        e.printStackTrace();
+                                        break;
+                                    }
+                                }
+                            }
+                        });
+        producerThread.start();
+        long median = 50_000L;
+        long current;
+        double in = -3;
+        int i = 0;
+
+        while (running
+                && (workloadLength == -1
+                        || (dataSent * getRuntimeContext().getNumberOfParallelSubtasks()
+                                < ((long) workloadLength * 1024 * 1024 * 1024)))) {
+            current = median + (long) (median * Math.cos(in));
+            sleepEvery.set(current);
+            in += 0.04;
+            LoggerFactory.getLogger(SequenceGeneratorSource.class)
+                    .debug("At time " + (i++) + " Setting current " + current);
+            Thread.sleep(60 * 1000L); // once per minute.
+        }
+    }
+
     private void runActive(SourceContext<Event> ctx) throws Exception {
-        Random random = new Random();
+        Random random = ThreadLocalRandom.current();
 
         // this holds the current event time, from which generated events can up to +/-
         // (maxOutOfOrder).

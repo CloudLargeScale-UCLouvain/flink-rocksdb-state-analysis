@@ -278,6 +278,11 @@ public class DataStreamAllroundTestJobFactory {
                     .intType()
                     .defaultValue(0);
 
+    private static final ConfigOption<Boolean> SEQUENCE_GENERATOR_COS_GENERATION =
+            ConfigOptions.key("sequence_generator_source.cos_generation")
+                    .booleanType()
+                    .defaultValue(false);
+
     private static final ConfigOption<Long> TUMBLING_WINDOW_OPERATOR_NUM_EVENTS =
             ConfigOptions.key("tumbling_window_operator.num_events").longType().defaultValue(20L);
 
@@ -443,7 +448,10 @@ public class DataStreamAllroundTestJobFactory {
                         SEQUENCE_GENERATOR_SKEWED_DATA_BIAS.defaultValue()),
                 pt.getInt(
                         SEQUENCE_GENERATOR_ELEMENTS_PER_SECOND.key(),
-                        SEQUENCE_GENERATOR_ELEMENTS_PER_SECOND.defaultValue()));
+                        SEQUENCE_GENERATOR_ELEMENTS_PER_SECOND.defaultValue()),
+                pt.getBoolean(
+                        SEQUENCE_GENERATOR_COS_GENERATION.key(),
+                        SEQUENCE_GENERATOR_COS_GENERATION.defaultValue()));
     }
 
     static BoundedOutOfOrdernessTimestampExtractor<Event> createTimestampExtractor(

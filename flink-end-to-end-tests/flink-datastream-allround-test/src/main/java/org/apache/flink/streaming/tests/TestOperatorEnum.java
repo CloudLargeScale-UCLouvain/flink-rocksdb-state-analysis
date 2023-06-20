@@ -35,7 +35,10 @@ public enum TestOperatorEnum {
     RESULT_TYPE_QUERYABLE_MAPPER_WITH_CUSTOM_SER(
             "ResultTypeQueryableMapWithCustomStatefulTypeSerializer", 12),
     MAPPER_RETURNS_OUT_WITH_CUSTOM_SER("MapReturnsOutputWithCustomStatefulTypeSerializer", 13),
-    EVENT_IDENTITY_MAPPER("EventIdentityMapper", 14);
+    EVENT_IDENTITY_MAPPER("EventIdentityMapper", 14),
+    DISCARDING_SINK("DiscardingSink", 15),
+    CPU_LOAD_MAPPER("CPULoadMapper", 16),
+    VALUE_STATE_MAPPER("ValueStateMapper", 17);
 
     private final String name;
     private final String uid;

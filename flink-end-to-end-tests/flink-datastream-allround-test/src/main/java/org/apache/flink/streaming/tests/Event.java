@@ -18,17 +18,22 @@
 
 package org.apache.flink.streaming.tests;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.io.Serializable;
 import java.util.Objects;
 
 /** The event type of records used in the {@link DataStreamAllroundTestProgram}. */
-public class Event {
+public class Event implements Serializable {
 
     private final int key;
     private final long eventTime;
     private final long sequenceNumber;
     private final String payload;
 
-    public Event(int key, long eventTime, long sequenceNumber, String payload) {
+    @JsonCreator
+    public Event(@JsonProperty("key") int key, @JsonProperty("eventTime") long eventTime, @JsonProperty("sequenceNumber") long sequenceNumber, @JsonProperty("payload") String payload) {
         this.key = key;
         this.eventTime = eventTime;
         this.sequenceNumber = sequenceNumber;
