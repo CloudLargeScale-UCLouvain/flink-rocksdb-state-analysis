@@ -1,3 +1,4 @@
+Test
 # Compile
 `mvn clean compile package`
 # Run
